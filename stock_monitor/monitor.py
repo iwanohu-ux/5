@@ -46,6 +46,19 @@ def sma(vals, n, i):
     return sum(vals[i - n + 1:i + 1]) / n if i + 1 >= n else None
 
 
+def expected_session(holidays):
+    """今の時点で終値が出ているはずの直近の米国取引日 (ET 16:00 以降なら当日)。"""
+    try:
+        from zoneinfo import ZoneInfo
+        now = dt.datetime.now(ZoneInfo("America/New_York"))
+    except Exception:  # noqa: BLE001  tzdataが無い環境では冬時間(UTC-5)で代用
+        now = dt.datetime.now(dt.timezone(dt.timedelta(hours=-5)))
+    d = now.date() if now.hour >= 16 else now.date() - dt.timedelta(days=1)
+    while d.weekday() >= 5 or d.isoformat() in holidays:
+        d -= dt.timedelta(days=1)
+    return d.isoformat()
+
+
 def analyze_holding(h, rows, cfg):
     """取得日以降について、ラチェット式(下げない)売りラインを日毎に計算する。"""
     atr = atr_series(rows, cfg["atr_period"])
@@ -72,6 +85,7 @@ def main():
     cfg = json.load(open(a.config, encoding="utf-8"))
     end = a.asof or dt.date.today().isoformat()
     end_d = dt.date.fromisoformat(end)
+    expected = None if a.asof else expected_session(set(cfg.get("market_holidays", [])))
 
     alerts, lines, errors = [], [], []
     total_cost = total_val = 0.0
@@ -93,7 +107,9 @@ def main():
             continue
         d, close, peak, stop, atr = hist[-1]
         pd_, pclose, _, pstop, _ = hist[-2]
-        if (end_d - dt.date.fromisoformat(d)).days > 4:
+        if expected and d < expected:
+            errors.append(f"{sym}: データ未更新 (最新{d}、本来は{expected}の終値があるはず。判定は{d}時点)")
+        elif not expected and (end_d - dt.date.fromisoformat(d)).days > 4:
             errors.append(f"{sym}: 最新データが古い ({d})")
         pnl = (close / h["cost"] - 1) * 100
         val = close * h["shares"]
@@ -142,6 +158,8 @@ def main():
     mk = cfg["market_symbol"]
     try:
         rows = fetch(mk, (end_d - dt.timedelta(days=330)).isoformat(), end)
+        if expected and rows[-1]["date"] < expected:
+            errors.append(f"{mk}: データ未更新 (最新{rows[-1]['date']}、本来は{expected})")
         c = [r["close"] for r in rows]
         n = cfg["market_ma_days"]
         m1, m0 = sma(c, n, len(c) - 1), sma(c, n, len(c) - 2)
@@ -166,7 +184,10 @@ def main():
         print("\n".join(out) if out else "NO_ALERT")
         return
     pnl_total = total_val - total_cost
-    print(f"【週次まとめ {end}】評価${total_val:,.0f} 損益${pnl_total:+,.0f} ({(total_val/total_cost-1)*100 if total_cost else 0:+.1f}%)")
+    if total_cost:
+        print(f"【週次まとめ {end}】評価${total_val:,.0f} 損益${pnl_total:+,.0f} ({(total_val/total_cost-1)*100:+.1f}%)")
+    else:
+        print(f"【週次まとめ {end}】評価額は取得できず")
     print(*lines, sep="\n")
     print(market_line)
     if weight_lines:
