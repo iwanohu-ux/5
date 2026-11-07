@@ -1,0 +1,26 @@
+{
+  "_note": "保有はNISA口座(SBI証券)。株数・取得単価は約定履歴から。売買したらここを更新する。",
+  "atr_period": 22,
+  "atr_mult": 3.0,
+  "stop_raise_alert_pct": 5.0,
+  "weight_limit_pct": 20.0,
+  "earnings_warn_days": 3,
+  "market_symbol": "SPY",
+  "market_ma_days": 200,
+  "reentry_ma_days": 50,
+  "holdings": [
+    {"symbol": "SOFI", "shares": 8,  "cost": 26.758, "entry": "2026-01-14"},
+    {"symbol": "KVYO", "shares": 18, "cost": 24.44,  "entry": "2026-01-21"},
+    {"symbol": "RKLB", "shares": 10, "cost": 81.50,  "entry": "2026-07-13"},
+    {"symbol": "HOOD", "shares": 5,  "cost": 76.00,  "entry": "2026-05-19"},
+    {"symbol": "RDDT", "shares": 2,  "cost": 143.91, "entry": "2026-05-25"},
+    {"symbol": "NVDA", "shares": 2,  "cost": 215.87, "entry": "2026-06-02"},
+    {"symbol": "P",    "shares": 7,  "cost": 71.00,  "entry": "2026-06-10"}
+  ],
+  "sold": [],
+  "earnings": {
+    "RKLB": "2026-11-09",
+    "NVDA": "2026-11-17",
+    "P": "2026-11-18"
+  }
+}
