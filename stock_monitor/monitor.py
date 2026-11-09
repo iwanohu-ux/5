@@ -187,6 +187,9 @@ def main():
             days = (dt.date.fromisoformat(ed) - end_d).days
             if 0 <= days <= cfg["earnings_warn_days"]:
                 alerts.append(f"📅{sym} 決算まで{days}日 ({ed})。値が飛ぶ可能性")
+        # ⑤ 急落(理由の確認は news.py --news-for で)
+        if not first_day and close / pclose - 1 <= -cfg.get("drop_alert_pct", 8) / 100:
+            alerts.append(f"📉{sym} 1日で{(close / pclose - 1) * 100:.1f}%。会社固有の理由か確認を")
 
     # 売却済み銘柄: 再エントリー候補(50日線を上抜け)
     for s in cfg.get("sold", []):
@@ -232,6 +235,8 @@ def main():
             bd = sum(1 for k in range((dt.date.fromisoformat(ed) - end_d).days + 1)
                      if (end_d + dt.timedelta(days=k)).weekday() < 5)
             near_earn = 0 <= (dt.date.fromisoformat(ed) - end_d).days and bd <= 5
+        if c[-1] / c[-2] - 1 <= -cfg.get("drop_alert_pct", 8) / 100:
+            alerts.append(f"📉{sym}(見張り) 1日で{(c[-1] / c[-2] - 1) * 100:.1f}%。会社固有の理由か確認を")
         state = "条件クリア" if ok and not near_earn else ("決算前で待機" if ok else "未達")
         lines.append(f"{sym}(見張り): ${c[-1]:.2f} 50日線${ma:.2f} 2ヶ月{r42*100:+.0f}% → {state}")
         if ok and not ok_prev and not near_earn:
