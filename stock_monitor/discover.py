@@ -172,7 +172,7 @@ def profile(cik, cache_dir, today):
     cutoff = (today - dt.timedelta(days=5 * 365)).isoformat()
     young = (not older) and (ipo or first_p or "0") >= cutoff and (first_p is None or first_p >= cutoff)
     listed = ipo or first_p
-    return {"tickers": s.get("tickers") or [], "sic": s.get("sicDescription") or "",
+    return {"cik": cik, "tickers": s.get("tickers") or [], "sic": s.get("sicDescription") or "",
             "spin": young and ipo is None,  # 新規上場の目論見書が無い = 分社化・合併による上場の可能性
             "young": young, "listed": listed, "last_periodic": max(periodic, default=None),
             "days_listed": (today - dt.date.fromisoformat(listed)).days if listed else None}
@@ -189,6 +189,31 @@ def new_ipos(today, days):
         return None
 
 
+CACHE = [None]
+
+
+def acquisition_flag(cik, m):
+    """のれん(買収で生じる資産)が1年で売上の10%以上増えていれば、買収で伸びた可能性ありとする。"""
+    try:
+        d = get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{int(cik):010d}/us-gaap/Goodwill.json",
+                os.path.join(CACHE[0], f"gw_{cik}.json") if CACHE[0] else None)
+    except Exception:  # noqa: BLE001
+        return ""
+    vals = sorted({(x["end"], x["val"]) for x in (d or {}).get("units", {}).get("USD", [])})
+    if not vals:
+        return ""
+    end, now = vals[-1]
+    target = dt.date.fromisoformat(end) - dt.timedelta(days=365)
+    past = [v for e, v in vals if abs((dt.date.fromisoformat(e) - target).days) <= 45]
+    if not past:
+        return ""
+    jump = now - past[-1]
+    size = m.get("ttm_rev", m["ann_rev"])
+    if size > 0 and jump / size >= 0.10:
+        return f" ⚠買収で伸びた可能性(のれん1年で+${jump/1e9:.1f}B)"
+    return ""
+
+
 def fmt(name, p, m):
     tk = ",".join(p["tickers"][:2]) or "-"
     if "ttm_g" in m:
@@ -202,8 +227,9 @@ def fmt(name, p, m):
     days = f" 上場{p['days_listed']}日" if p["days_listed"] is not None and p["young"] else ""
     if p.get("spin"):
         days += "(分社化・合併の可能性)"
+    acq = acquisition_flag(p["cik"], m)
     return (f"{tk:9} {name[:34]:34} {m['q']} 成長{m['q_g']*100:+.0f}% 営利率{m['q_m']*100:.0f}% | "
-            f"{ttm} | 年売上${size/1e9:.1f}B{days} [{p['sic'][:24]}]{infl}")
+            f"{ttm} | 年売上${size/1e9:.1f}B{days} [{p['sic'][:24]}]{infl}{acq}")
 
 
 def main():
@@ -219,6 +245,7 @@ def main():
     a = ap.parse_args()
     USE_TTM[0] = not a.quarter_only
     os.makedirs(a.cache, exist_ok=True)
+    CACHE[0] = a.cache
     today = dt.date.today()
     # 毎朝(米国の平日)に動く前提: 月曜(UTC)は金曜からの3日分、それ以外は1日分
     if a.fresh_days is None:

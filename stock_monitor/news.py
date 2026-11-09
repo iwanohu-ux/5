@@ -69,6 +69,23 @@ def sec_events(cik, since):
     return out
 
 
+def earnings_filings(cik, since_utc):
+    """since_utc 以降にSECが受理した決算発表(8-K/6-K の項目2.02)。受理時刻つき。"""
+    s = get_json(f"https://data.sec.gov/submissions/CIK{int(cik):010d}.json", UA)
+    time.sleep(0.12)
+    rec = s["filings"]["recent"]
+    out = []
+    for form, acc_t, items, acc, doc in zip(rec["form"], rec["acceptanceDateTime"], rec["items"],
+                                            rec["accessionNumber"], rec["primaryDocument"]):
+        t = dt.datetime.fromisoformat(acc_t.replace("Z", "+00:00"))
+        if t < since_utc:
+            break
+        if form in ("8-K", "8-K/A", "6-K") and "2.02" in (items or ""):
+            url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc.replace('-', '')}/{doc}"
+            out.append((t, url))
+    return out
+
+
 _poly_last = [0.0]
 
 
@@ -88,12 +105,40 @@ def headlines(sym, since, limit=5):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["daily", "weekly"], default="daily")
+    ap.add_argument("--mode", choices=["daily", "weekly", "earnings"], default="daily")
     ap.add_argument("--news-for", default="", help="毎朝でも見出しを取る銘柄(カンマ区切り)")
     ap.add_argument("--config", default=os.path.join(HERE, "config.json"))
     ap.add_argument("--days", type=int, help="確認する日数(既定: 毎朝は前回の実行以降、週次は7日)")
+    ap.add_argument("--hours", type=int, default=17, help="earningsモード: 何時間前からの決算発表を拾うか")
     a = ap.parse_args()
     cfg = json.load(open(a.config, encoding="utf-8"))
+
+    if a.mode == "earnings":
+        # 決算速報: 保有・見張り中の銘柄が直近に決算を出していれば、届け出と見出しを並べる
+        now = dt.datetime.now(dt.timezone.utc)
+        since_utc = now - dt.timedelta(hours=a.hours)
+        out, errors = [], []
+        for x, kind in [(h, "保有") for h in cfg["holdings"]] + [(w, "見張り") for w in cfg.get("watchlist", [])]:
+            sym, cik = x["symbol"], x.get("cik")
+            if not cik:
+                continue
+            try:
+                found = earnings_filings(cik, since_utc)
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{sym}: SECの届け出の取得失敗 ({e})")
+                continue
+            for t, url in found:
+                jst = t.astimezone(dt.timezone(dt.timedelta(hours=9))).strftime("%m/%d %H:%M")
+                out.append(f"📊{sym}({kind}) 決算発表 {jst}(日本時間)\n    {url}")
+                try:
+                    for d, p, title, u in headlines(sym, since_utc.date().isoformat(), limit=6):
+                        out.append(f"    {d} [{p}] {title}\n      {u}")
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"{sym}: ニュースの取得失敗 ({e})")
+        out += [f"⚠️{e}" for e in errors]
+        print("\n".join(out) if out else "NO_EARNINGS")
+        return
+
     today = dt.datetime.now(dt.timezone.utc).date()
     days = a.days or (7 if a.mode == "weekly" else (3 if today.weekday() == 0 else 1))
     since = (today - dt.timedelta(days=days)).isoformat()
