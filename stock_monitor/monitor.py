@@ -69,7 +69,8 @@ def analyze_holding(h, rows, cfg):
     for i, r in enumerate(rows):
         if r["date"] < h["entry"] or atr[i] is None:
             continue
-        peak = r["close"] if peak is None else max(peak, r["close"])
+        # 初日は買値を起点にする(最初の売りライン = 買値 - N x ATR)
+        peak = max(h["cost"], r["close"]) if peak is None else max(peak, r["close"])
         cand = peak - m * atr[i]
         stop = cand if stop is None else max(stop, cand)
         hist.append((r["date"], r["close"], peak, stop, atr[i]))
@@ -93,7 +94,7 @@ def main():
 
     for h in cfg["holdings"]:
         sym = h["symbol"]
-        if h["entry"] >= end:  # 検証日時点でまだ買っていない
+        if h["entry"] > end:  # 検証日時点でまだ買っていない
             continue
         start = (dt.date.fromisoformat(h["entry"]) - dt.timedelta(days=60)).isoformat()
         try:
@@ -102,11 +103,18 @@ def main():
             errors.append(f"{sym}: データ取得失敗 ({e})")
             continue
         hist = analyze_holding(h, rows, cfg)
-        if len(hist) < 2:
-            errors.append(f"{sym}: データ不足")
+        if not hist:
+            if not rows or rows[-1]["date"] < h["entry"]:
+                lines.append(f"{sym}: 購入日({h['entry']})の終値待ち")
+            else:
+                errors.append(f"{sym}: データ不足")
             continue
         d, close, peak, stop, atr = hist[-1]
-        pd_, pclose, _, pstop, _ = hist[-2]
+        first_day = len(hist) == 1  # 購入初日: 前日との比較ができない
+        if first_day:
+            pclose, pstop = h["cost"], stop
+        else:
+            pd_, pclose, _, pstop, _ = hist[-2]
         if expected and d < expected:
             errors.append(f"{sym}: データ未更新 (最新{d}、本来は{expected}の終値があるはず。判定は{d}時点)")
         elif not expected and (end_d - dt.date.fromisoformat(d)).days > 4:
@@ -129,7 +137,9 @@ def main():
             if stop >= s5 * (1 + cfg["stop_raise_alert_pct"] / 100) and close >= stop:
                 alerts.append(f"⬆️{sym} 売りライン上昇 ${s5:.2f}→${stop:.2f}。SBIの逆指値を${stop:.2f}に変更を")
         # ③ 含み損→プラス転換
-        if close > h["cost"] and pclose <= h["cost"]:
+        if first_day:
+            alerts.append(f"🆕{sym} 購入初日の売りライン ${stop:.2f}。SBIで逆指値をこの値段に")
+        elif close > h["cost"] and pclose <= h["cost"]:
             alerts.append(f"🟢{sym} プラス転換: ${close:.2f} > 取得${h['cost']:.2f}")
         # ④ 決算接近
         ed = cfg.get("earnings", {}).get(sym)

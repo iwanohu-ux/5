@@ -15,11 +15,11 @@
     {"symbol": "HOOD", "shares": 5,  "cost": 76.00,  "entry": "2026-05-19"},
     {"symbol": "RDDT", "shares": 2,  "cost": 143.91, "entry": "2026-05-25"},
     {"symbol": "NVDA", "shares": 2,  "cost": 215.87, "entry": "2026-06-02"},
-    {"symbol": "P",    "shares": 7,  "cost": 71.00,  "entry": "2026-06-10"}
+    {"symbol": "P",    "shares": 7,  "cost": 71.00,  "entry": "2026-06-10"},
+    {"symbol": "NXT",  "shares": 1,  "cost": 105.00, "entry": "2026-11-09"}
   ],
   "sold": [],
   "watchlist": [
-    {"symbol": "NXT", "note": "Nextpower。CEOが創業者か要確認"},
     {"symbol": "LOAR", "note": "50日線が上向けば条件クリア"}
   ],
   "market_holidays": ["2026-11-26", "2026-12-25", "2027-01-01", "2027-01-18", "2027-02-15",
