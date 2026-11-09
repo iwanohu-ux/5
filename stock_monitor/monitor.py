@@ -155,6 +155,39 @@ def main():
             lines.append(f"{sym}(売却済 {s.get('date','')} @${s.get('price','?')}): ${c[-1]:.2f} {n}日線${m1:.2f}")
 
     # 市場全体: SPYと200日線
+    # 見張り候補: 買いのタイミング条件(方針v2の4-1)を新たに満たした日に通知
+    for w in cfg.get("watchlist", []):
+        sym = w["symbol"]
+        try:
+            rows = fetch(sym, (end_d - dt.timedelta(days=150)).isoformat(), end)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{sym}(見張り): データ取得失敗 ({e})")
+            continue
+        c = [r["close"] for r in rows]
+        if len(c) < 63:
+            errors.append(f"{sym}(見張り): データ不足")
+            continue
+
+        def entry_ok(i):
+            ma = sma(c, 50, i)
+            ma10 = sma(c, 50, i - 10)
+            r42 = c[i] / c[i - 42] - 1
+            return c[i] > ma and ma >= ma10 * 0.99 and r42 > -0.10, ma, r42
+
+        ok, ma, r42 = entry_ok(len(c) - 1)
+        ok_prev, _, _ = entry_ok(len(c) - 2)
+        ed = cfg.get("earnings", {}).get(sym)
+        near_earn = False
+        if ed:
+            bd = sum(1 for k in range((dt.date.fromisoformat(ed) - end_d).days + 1)
+                     if (end_d + dt.timedelta(days=k)).weekday() < 5)
+            near_earn = 0 <= (dt.date.fromisoformat(ed) - end_d).days and bd <= 5
+        state = "条件クリア" if ok and not near_earn else ("決算前で待機" if ok else "未達")
+        lines.append(f"{sym}(見張り): ${c[-1]:.2f} 50日線${ma:.2f} 2ヶ月{r42*100:+.0f}% → {state}")
+        if ok and not ok_prev and not near_earn:
+            alerts.append(f"👀{sym}(見張り) 買いのタイミング条件を満たした ${c[-1]:.2f}。"
+                          f"4つの絶対条件(決算の中身)は自分で確認を")
+
     mk = cfg["market_symbol"]
     try:
         rows = fetch(mk, (end_d - dt.timedelta(days=330)).isoformat(), end)
