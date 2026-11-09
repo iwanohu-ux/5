@@ -20,7 +20,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 API = "https://api.tiingo.com/tiingo/daily/{sym}/prices?startDate={start}&endDate={end}"
 
 
-def fetch(sym, start, end):
+POLY = ("https://api.polygon.io/v2/aggs/ticker/{sym}/range/1/day/{start}/{end}"
+        "?adjusted=true&sort=asc&limit=5000")
+_poly_last = [0.0]
+SOURCE_USED = {}
+
+
+def fetch_tiingo(sym, start, end):
     req = urllib.request.Request(
         API.format(sym=sym.lower(), start=start, end=end),
         headers={"Authorization": "Token " + os.environ.get("TIINGO_TOKEN", "proxy-injected"),
@@ -29,6 +35,40 @@ def fetch(sym, start, end):
         rows = json.load(r)
     return [{"date": x["date"][:10], "open": x["adjOpen"], "high": x["adjHigh"],
              "low": x["adjLow"], "close": x["adjClose"]} for x in rows]
+
+
+def fetch_polygon(sym, start, end):
+    """予備のデータ源。無料枠は1分5回なので、呼び出しの間隔を13秒空ける。"""
+    import time
+    wait = 13 - (time.time() - _poly_last[0])
+    if wait > 0:
+        time.sleep(wait)
+    req = urllib.request.Request(
+        POLY.format(sym=sym.upper(), start=start, end=end),
+        headers={"Authorization": "Bearer " + os.environ.get("POLYGON_KEY", "proxy-injected")})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            j = json.load(r)
+    finally:
+        _poly_last[0] = time.time()
+    return [{"date": dt.datetime.fromtimestamp(x["t"] / 1000, dt.timezone.utc).strftime("%Y-%m-%d"),
+             "open": x["o"], "high": x["h"], "low": x["l"], "close": x["c"]}
+            for x in j.get("results", [])]
+
+
+def fetch(sym, start, end):
+    """Tiingoで取得し、失敗(回数制限など)したらPolygonに切り替える。"""
+    try:
+        rows = fetch_tiingo(sym, start, end)
+        SOURCE_USED[sym] = "Tiingo"
+        return rows
+    except Exception as e1:  # noqa: BLE001
+        try:
+            rows = fetch_polygon(sym, start, end)
+            SOURCE_USED[sym] = "Polygon"
+            return rows
+        except Exception as e2:  # noqa: BLE001
+            raise RuntimeError(f"Tiingo: {e1} / Polygon: {e2}")
 
 
 def atr_series(rows, n):
@@ -221,6 +261,10 @@ def main():
             w = v / total_val * 100
             if w > cfg["weight_limit_pct"]:
                 weight_lines.append(f"{sym} {w:.0f}%")
+
+    poly = sorted(s for s, src in SOURCE_USED.items() if src == "Polygon")
+    if poly:
+        lines.append(f"(データ源: Tiingoが使えず、{', '.join(poly)} はPolygonで取得)")
 
     if a.mode == "daily":
         out = alerts + [f"⚠️{e}" for e in errors]
