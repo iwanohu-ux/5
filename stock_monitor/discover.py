@@ -19,7 +19,8 @@ import os
 import time
 import urllib.request
 
-UA = {"User-Agent": "personal-stock-screener research-script"}
+_CONTACT = os.environ.get("SEC_CONTACT", "").strip()  # SECが求める連絡先(コードには書かない)
+UA = {"User-Agent": f"personal-stock-screener {_CONTACT}".strip() if _CONTACT else "personal-stock-screener research-script"}
 REV_TAGS = ("Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax")
 OP_TAG = "OperatingIncomeLoss"
 EXCLUDE_SIC = ("Crude Petroleum", "Natural Gas", "Oil", "Petroleum", "Pipe Line", "Real Estate",

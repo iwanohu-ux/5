@@ -12,13 +12,17 @@
 """
 import argparse
 import datetime as dt
+import html
 import json
 import os
+import re
 import time
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-UA = {"User-Agent": "personal-stock-screener research-script"}
+# SECは連絡先を含む名乗りを求める。連絡先はコードに書かず、環境変数 SEC_CONTACT から読む
+CONTACT = os.environ.get("SEC_CONTACT", "").strip()
+UA = {"User-Agent": f"personal-stock-screener {CONTACT}".strip() if CONTACT else "personal-stock-screener research-script"}
 
 # 8-Kの項目番号のうち、方針の「前提崩れ」や重大な変化に関わるもの
 RED_ITEMS = {
@@ -61,12 +65,57 @@ def sec_events(cik, since):
             red = [f"{i}({RED_ITEMS[i]})" for i in its if i in RED_ITEMS]
             info = [f"{i}({INFO_ITEMS[i]})" for i in its if i in INFO_ITEMS]
             if red:
-                out.append(("red", date, f"{form} " + ", ".join(red), url))
+                ex = item_excerpt(url, [i for i in its if i in RED_ITEMS])
+                what = f"{form} " + ", ".join(red) + (f"\n    【本文の抜粋】{ex}" if ex else "")
+                out.append(("red", date, what, url))
             elif info:
                 out.append(("info", date, f"{form} " + ", ".join(info), url))
         elif form in RED_FORMS:
             out.append(("red", date, f"{form}({RED_FORMS[form]})", url))
     return out
+
+
+def fetch_text(url, limit=None):
+    """SECの書類の本文をテキストで返す。連絡先が未設定なら読めないので None。"""
+    if not CONTACT:
+        return None
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
+            raw = r.read().decode("utf-8", errors="ignore")
+        time.sleep(0.12)
+    except Exception:  # noqa: BLE001
+        return None
+    raw = re.sub(r"(?is)<(script|style).*?</\1>", " ", raw)
+    t = html.unescape(re.sub(r"<[^>]+>", " ", raw))
+    t = re.sub(r"\s+", " ", t).strip()
+    return t[:limit] if limit else t
+
+
+def item_excerpt(url, items, width=900):
+    """8-K本文から、指定した項目(例: 5.02)の部分を抜き出す。"""
+    t = fetch_text(url)
+    if not t:
+        return None
+    parts = []
+    for i in items:
+        m = re.search(rf"Item\s*{re.escape(i)}", t, re.I)
+        if m:
+            parts.append(t[m.start():m.start() + width])
+    return " / ".join(parts) or t[:width]
+
+
+def press_release(cik, acc, width=2500):
+    """決算の8-Kに添付されたプレスリリース(EX-99.1)の冒頭。"""
+    base = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc.replace('-', '')}"
+    idx = fetch_text(base + "/index.json")
+    if not idx:
+        return None
+    try:
+        files = [f["name"] for f in json.loads(idx)["directory"]["item"]]
+    except Exception:  # noqa: BLE001
+        return None
+    ex = [f for f in files if re.search(r"ex-?99", f, re.I) and f.lower().endswith((".htm", ".html", ".txt"))]
+    return fetch_text(f"{base}/{ex[0]}", width) if ex else None
 
 
 def earnings_filings(cik, since_utc):
@@ -82,7 +131,7 @@ def earnings_filings(cik, since_utc):
             break
         if form in ("8-K", "8-K/A", "6-K") and "2.02" in (items or ""):
             url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc.replace('-', '')}/{doc}"
-            out.append((t, url))
+            out.append((t, url, press_release(cik, acc)))
     return out
 
 
@@ -127,9 +176,10 @@ def main():
             except Exception as e:  # noqa: BLE001
                 errors.append(f"{sym}: SECの届け出の取得失敗 ({e})")
                 continue
-            for t, url in found:
+            for t, url, pr in found:
                 jst = t.astimezone(dt.timezone(dt.timedelta(hours=9))).strftime("%m/%d %H:%M")
                 out.append(f"📊{sym}({kind}) 決算発表 {jst}(日本時間)\n    {url}")
+                out.append(f"    【決算資料の冒頭】{pr}" if pr else "    【決算資料】本文は未取得(SEC_CONTACT未設定か取得失敗)")
                 try:
                     for d, p, title, u in headlines(sym, since_utc.date().isoformat(), limit=6):
                         out.append(f"    {d} [{p}] {title}\n      {u}")
