@@ -102,7 +102,7 @@ def expected_session(holidays):
 def analyze_holding(h, rows, cfg):
     """取得日以降について、ラチェット式(下げない)売りラインを日毎に計算する。"""
     atr = atr_series(rows, cfg["atr_period"])
-    m = cfg["atr_mult"]
+    m = h.get("atr_mult", cfg["atr_mult"])  # コア銘柄は保有設定で 4.0 などに広げられる
     peak = None
     stop = None
     hist = []  # (date, close, peak, stop)
