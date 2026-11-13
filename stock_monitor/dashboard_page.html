@@ -511,7 +511,10 @@
       root = el;
       const d = dash.data('report');
       if (d.status !== 'ok') { el.textContent = d.status === 'error' ? '読み込めませんでした' : '—'; return; }
-      rows = d.data.filter((r) => Array.isArray(r.h_d) && r.h_d.length);
+      // 一覧が文字列(JSONの文字)で届いた場合は一覧に戻す
+      const arr = (v) => { if (Array.isArray(v)) return v; if (typeof v === 'string' && v.startsWith('[')) { try { return JSON.parse(v); } catch (e) { return null; } } return null; };
+      rows = d.data.map((r) => ({ ...r, h_d: arr(r.h_d), h_c: arr(r.h_c), h_m: arr(r.h_m), h_s: arr(r.h_s) }))
+        .filter((r) => Array.isArray(r.h_d) && r.h_d.length && Array.isArray(r.h_c));
       if (!rows.length) { el.textContent = 'チャート用のデータがまだありません(次の更新で入ります)'; return; }
       if (!st.pick) st.pick = new Set(rows.filter((r) => r.kind !== '見張り').map((r) => r.symbol));
       if (!st.sel || !rows.some((r) => r.symbol === st.sel)) st.sel = (rows.find((r) => r.kind === '保有') || rows[0]).symbol;
