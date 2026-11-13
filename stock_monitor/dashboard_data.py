@@ -11,6 +11,7 @@ import datetime as dt
 import json
 import os
 import sys
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import monitor as M  # noqa: E402
@@ -44,15 +45,91 @@ def base_stats(rows):
 
 
 HIST_DAYS = 252  # チャート用に持つ営業日数(約1年)
+TIINGO_D = "https://api.tiingo.com/tiingo/daily/{sym}/prices?startDate={start}&endDate={end}"
+TIINGO_I = ("https://api.tiingo.com/iex/{sym}/prices?startDate={d}&endDate={d}"
+            "&resampleFreq=5min&columns=open,high,low,close,volume")
+POLY_I = "https://api.polygon.io/v2/aggs/ticker/{sym}/range/5/minute/{d}/{d}?adjusted=true&sort=asc&limit=500"
+
+
+def _get(url, auth):
+    req = urllib.request.Request(url, headers={"Authorization": auth})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+
+def fetch_daily(sym, start, end):
+    """日足(始値・高値・安値・終値・出来高)。Tiingoが使えなければPolygon(出来高なし)。"""
+    try:
+        rows = _get(TIINGO_D.format(sym=sym.lower(), start=start, end=end),
+                    "Token " + os.environ.get("TIINGO_TOKEN", "proxy-injected"))
+        M.SOURCE_USED[sym] = "Tiingo"
+        return [{"date": x["date"][:10], "open": x["adjOpen"], "high": x["adjHigh"], "low": x["adjLow"],
+                 "close": x["adjClose"], "volume": x.get("adjVolume")} for x in rows]
+    except Exception:  # noqa: BLE001
+        rows = M.fetch_polygon(sym, start, end)
+        M.SOURCE_USED[sym] = "Polygon"
+        return rows
+
+
+def _et(t_utc):
+    """UTC時刻を米国東部時間に。tzdataが無ければ冬時間(UTC-5)で代用。"""
+    try:
+        from zoneinfo import ZoneInfo
+        return t_utc.astimezone(ZoneInfo("America/New_York"))
+    except Exception:  # noqa: BLE001
+        return t_utc.astimezone(dt.timezone(dt.timedelta(hours=-5)))
+
+
+def fetch_intraday(sym, day):
+    """その日の5分足(通常の取引時間 9:30〜16:00、米国東部時間)。取れなければ空。"""
+    pts = []
+    try:
+        for x in _get(TIINGO_I.format(sym=sym.lower(), d=day), "Token " + os.environ.get("TIINGO_TOKEN", "proxy-injected")):
+            t = _et(dt.datetime.fromisoformat(x["date"].replace("Z", "+00:00")))
+            pts.append((t, x["open"], x["high"], x["low"], x["close"], x.get("volume") or 0))
+    except Exception:  # noqa: BLE001
+        try:
+            import time
+            wait = 13 - (time.time() - M._poly_last[0])
+            if wait > 0:
+                time.sleep(wait)
+            try:
+                j = _get(POLY_I.format(sym=sym.upper(), d=day), "Bearer " + os.environ.get("POLYGON_KEY", "proxy-injected"))
+            finally:
+                M._poly_last[0] = time.time()
+            for x in j.get("results", []):
+                t = _et(dt.datetime.fromtimestamp(x["t"] / 1000, dt.timezone.utc))
+                pts.append((t, x["o"], x["h"], x["l"], x["c"], x.get("v") or 0))
+        except Exception:  # noqa: BLE001
+            return []
+    return [p for p in pts if p[0].date().isoformat() == day and (9, 30) <= (p[0].hour, p[0].minute) < (16, 0)]
+
+
+def intraday_of(sym, rows):
+    """チャートの「1日」用: 最新の取引日の5分足と、その前日の終値。"""
+    if len(rows) < 2:
+        return {}
+    day = rows[-1]["date"]
+    pts = fetch_intraday(sym, day)
+    if not pts:
+        return {}
+    return {"i_date": day, "i_prev": round(rows[-2]["close"], 2),
+            "i_t": [p[0].strftime("%H:%M") for p in pts],
+            "i_o": [round(p[1], 2) for p in pts], "i_h": [round(p[2], 2) for p in pts],
+            "i_l": [round(p[3], 2) for p in pts], "i_c": [round(p[4], 2) for p in pts],
+            "i_v": [int(p[5]) for p in pts]}
 
 
 def hist_of(rows, stop_hist=None):
-    """チャート用: 日付・終値・50日線(・売りライン)を直近 HIST_DAYS 日分。"""
+    """チャート用: 日付・始値・高値・安値・終値・出来高・50日線(・売りライン)を直近 HIST_DAYS 日分。"""
     c = [r["close"] for r in rows]
     n = len(rows)
     i0 = max(0, n - HIST_DAYS)
-    out = {"h_d": [r["date"] for r in rows[i0:]],
-           "h_c": [round(x, 2) for x in c[i0:]],
+    rr = rows[i0:]
+    out = {"h_d": [r["date"] for r in rr],
+           "h_o": [round(r["open"], 2) for r in rr], "h_h": [round(r["high"], 2) for r in rr],
+           "h_l": [round(r["low"], 2) for r in rr], "h_c": [round(x, 2) for x in c[i0:]],
+           "h_v": [int(r["volume"]) if r.get("volume") is not None else None for r in rr],
            "h_m": [round(sum(c[i - 49:i + 1]) / 50, 2) if i >= 49 else None for i in range(i0, n)]}
     if stop_hist:
         st = {d: v for d, v in stop_hist}
@@ -90,7 +167,7 @@ def main():
         sym = h["symbol"]
         start = min(dt.date.fromisoformat(h["entry"]) - dt.timedelta(days=60), today - dt.timedelta(days=460))
         try:
-            rows = M.fetch(sym, start.isoformat(), end)
+            rows = fetch_daily(sym, start.isoformat(), end)
             s = base_stats(rows)
         except Exception as e:  # noqa: BLE001
             errors.append(f"{sym}: {e}")
@@ -110,13 +187,13 @@ def main():
             "status_level": "bad" if broken else "ok",
             "cautions": " / ".join(cautions(s, earnings.get(sym), today)),
             "note": "",
-            **hist_of(rows, [(x[0], x[3]) for x in hist]),
+            **hist_of(rows, [(x[0], x[3]) for x in hist]), **intraday_of(sym, rows),
         })
 
     for w in cfg.get("watchlist", []):
         sym = w["symbol"]
         try:
-            rows = M.fetch(sym, (today - dt.timedelta(days=460)).isoformat(), end)
+            rows = fetch_daily(sym, (today - dt.timedelta(days=460)).isoformat(), end)
             s = base_stats(rows)
         except Exception as e:  # noqa: BLE001
             errors.append(f"{sym}: {e}")
@@ -134,11 +211,11 @@ def main():
             "first_stop_pct": round(-mult * atr / s["close"] * 100, 0), "atr_mult": mult,
             "cautions": " / ".join(cautions(s, earnings.get(sym), today)),
             "note": w.get("note", ""),
-            **hist_of(rows),
+            **hist_of(rows), **intraday_of(sym, rows),
         })
 
     try:
-        spy = M.fetch(cfg["market_symbol"], (today - dt.timedelta(days=460)).isoformat(), end)
+        spy = fetch_daily(cfg["market_symbol"], (today - dt.timedelta(days=460)).isoformat(), end)
         s = base_stats(spy)
         c = [r["close"] for r in spy]
         ma200 = sum(c[-200:]) / 200
@@ -147,7 +224,7 @@ def main():
                          "status": ("200日線の上" if c[-1] > ma200 else "200日線の下") + "・"
                          + ("50日線の上" if s["ma50_gap"] > 0 else "50日線の下(調整中)"),
                          "status_level": "ok" if c[-1] > ma200 else "bad", "cautions": "", "note": "",
-                         **hist_of(spy)})
+                         **hist_of(spy), **intraday_of(cfg["market_symbol"], spy)})
     except Exception as e:  # noqa: BLE001
         errors.append(f"SPY: {e}")
 
