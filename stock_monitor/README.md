@@ -29,6 +29,9 @@ SBI証券(NISA)で保有する米国株について、毎朝ルールに沿っ�
 ## 売買したら
 `config.json` を更新する。売った銘柄は `holdings` から `sold` に移す(例: `{"symbol": "P", "date": "2026-11-10", "price": 97.0}`)。
 
+毎日のジョブ(毎朝・決算速報)は、設定をダッシュボードのデータベース(`settings/config` の `json` フィールド)から読む。
+`config.json` を変えたら、同じ内容をそこにも書く(ジョブの指示文を直す必要はない)。
+
 ## 実行
 ```
 python3 monitor.py --mode daily
