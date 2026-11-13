@@ -128,8 +128,8 @@
         <span><i class="box" style="background: var(--color-ok)"></i>上げた日(足)</span>
         <span><i class="box" style="background: var(--color-bad)"></i>下げた日(足)</span>
         <span data-leg="ma"><i style="border-top-color: var(--color-fg-muted); border-top-style: dashed"></i>50日線</span>
-        <span data-leg="stop"><i style="border-top-color: var(--color-bad)"></i>売りライン(実線は日ごとの推移、点線は今の値)</span>
-        <span data-leg="wstop" hidden>見張り銘柄の「売り目安」は、今の値段で買ったときの売りラインの目安です</span>
+        <span data-leg="stop"><i style="border-top-color: var(--color-bad)"></i>売りライン(買った日からの実際の値)</span>
+        <span data-leg="trail"><i style="border-top-color: var(--color-bad); border-top-style: dashed"></i>売りラインの目安(過去22日の最高値 − 3×ATR。持っていたらこう動く)</span>
         <span data-leg="cost"><i style="border-top-color: var(--color-warn); border-top-style: dotted"></i>買値</span>
         <span data-leg="prev" hidden><i style="border-top-color: var(--cds-chart-reference); border-top-style: dashed"></i>前の日の終値</span>
         <span><i class="box" style="background: var(--cds-chart-axis)"></i>出来高(下の棒)</span>
@@ -406,12 +406,19 @@
     const arr = (v) => { if (Array.isArray(v)) return v; if (typeof v === 'string' && v.startsWith('[')) { try { return JSON.parse(v); } catch (e) { return null; } } return null; };
     let src = null, rows = [];
     C.PAL = d3.schemeTableau10;
+    // 売りラインの目安(日ごと): 過去22日の最高終値 − 倍率×ATR(22日)。持っていない期間・銘柄の動きを見るため
+    C.trail = (r) => {
+      const c = r.h_c, h = r.h_h, l = r.h_l, N = 22, k = r.atr_mult || 3;
+      if (!c || !h || !l) return null;
+      const tr = c.map((v, i) => (i ? Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1])) : null));
+      return c.map((v, i) => (i < N ? null : +(d3.max(c.slice(i - N + 1, i + 1)) - k * d3.mean(tr.slice(i - N + 1, i + 1))).toFixed(2)));
+    };
     C.rows = () => {
       const d = dash.data('report');
       if (d.status !== 'ok') return null;
       if (d.data !== src) {
         src = d.data;
-        rows = d.data.filter((r) => r.kind !== 'エラー').map((r) => { const o = { ...r }; KEYS.forEach((k) => { o[k] = arr(r[k]); }); return o; })
+        rows = d.data.filter((r) => r.kind !== 'エラー').map((r) => { const o = { ...r }; KEYS.forEach((k) => { o[k] = arr(r[k]); }); o.h_x = C.trail(o); return o; })
           .filter((r) => Array.isArray(r.h_d) && r.h_d.length && Array.isArray(r.h_c));
       }
       if (!C.pick) C.pick = new Set(rows.filter((r) => r.kind !== '見張り').map((r) => r.symbol));
@@ -431,7 +438,7 @@
       const n = Math.min(days + 1, r.h_d.length), k = r.h_d.length - n, out = [];
       for (let i = k; i < r.h_d.length; i++) {
         out.push({ x: parse(r.h_d[i]), label: r.h_d[i], o: r.h_o && r.h_o[i], h: r.h_h && r.h_h[i], l: r.h_l && r.h_l[i], c: r.h_c[i],
-          v: r.h_v && r.h_v[i], ma: r.h_m && r.h_m[i], st: r.h_s ? r.h_s[i] : null, pc: i > 0 ? r.h_c[i - 1] : null });
+          v: r.h_v && r.h_v[i], ma: r.h_m && r.h_m[i], st: r.h_s ? r.h_s[i] : null, cx: r.h_x ? r.h_x[i] : null, pc: i > 0 ? r.h_c[i - 1] : null });
       }
       return out;
     };
@@ -473,9 +480,9 @@
       const r = (rows || []).find((q) => q.symbol === C.sel);
       const hold = !!(r && r.kind === '保有');
       document.querySelectorAll('[data-leg="ma"]').forEach((e) => { e.hidden = C.days === 1; });
-      document.querySelectorAll('[data-leg="stop"]').forEach((e) => { e.hidden = !(r && (r.kind === '保有' || r.kind === '見張り')); });
+      document.querySelectorAll('[data-leg="stop"]').forEach((e) => { e.hidden = !hold; });
       document.querySelectorAll('[data-leg="cost"]').forEach((e) => { e.hidden = !hold; });
-      document.querySelectorAll('[data-leg="wstop"]').forEach((e) => { e.hidden = !(r && r.kind === '見張り'); });
+      document.querySelectorAll('[data-leg="trail"]').forEach((e) => { e.hidden = C.days === 1; });
       document.querySelectorAll('[data-leg="prev"]').forEach((e) => { e.hidden = C.days !== 1; });
     };
     C.open = (sym) => { C.sel = sym; C.mode = 'one'; C.sync(); C.redraw(); document.querySelectorAll('#charts').forEach((e) => e.scrollIntoView({ behavior: 'smooth', block: 'start' })); };
@@ -622,7 +629,7 @@
         add(r.close < r.stop ? `売りライン ${kbFmt.usd(r.stop)} を割っています` : `売りライン ${kbFmt.usd(r.stop)} まで ${kbFmt.pct(r.stop_gap)}`, r.close < r.stop ? 'bad' : '');
         add('損益 ' + kbFmt.pct(r.pnl_pct), kbFmt.signClass(r.pnl_pct));
       }
-      if (r.kind === '見張り') { add(r.status, r.status_level); if (r.first_stop_pct != null) add(`買うなら売りライン ${kbFmt.usd(r.close * (1 + r.first_stop_pct / 100))}(${r.first_stop_pct}%)`, 'bad'); }
+      if (r.kind === '見張り') { add(r.status, r.status_level); if (r.first_stop_pct != null) add(`今買うなら最初の売りライン ${kbFmt.usd(r.close * (1 + r.first_stop_pct / 100))}(${r.first_stop_pct}%)`, 'bad'); }
       void d1;
     });
 
@@ -645,12 +652,13 @@
       const lows = pts.map((p) => (candle ? p.l : p.c)), highs = pts.map((p) => (candle ? p.h : p.c));
       let lo = d3.min(lows), hi = d3.max(highs);
       if (!isDay) pts.forEach((p) => { if (p.ma != null) { lo = Math.min(lo, p.ma); hi = Math.max(hi, p.ma); } });
-      // 売りラインはいつも見えるように、グラフの範囲に必ず入れる(見張りは「今買ったら」の目安)
-      const stopNow = hold ? r.stop : (r.kind === '見張り' && r.first_stop_pct != null ? +(r.close * (1 + r.first_stop_pct / 100)).toFixed(2) : null);
-      const stopLabel = hold ? '売りライン' : '売り目安';
+      // 売りラインは日ごとの線で描き、いつも見えるようにグラフの範囲に必ず入れる
+      //   実線 = 保有銘柄の実際の売りライン(買った日から)
+      //   点線 = 目安(過去22日の最高終値 − 倍率×ATR)。買う前の期間・見張り銘柄・相場に使う
       const stopSeries = hold && !isDay ? pts.map((p) => p.st) : null;
-      if (stopNow != null) { lo = Math.min(lo, stopNow); hi = Math.max(hi, stopNow); }
-      if (stopSeries) stopSeries.forEach((v) => { if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } });
+      const trailSeries = !isDay ? pts.map((p) => (hold && p.st != null ? null : p.cx)) : null;
+      const stopNow = isDay ? (hold ? r.stop : null) : null;
+      [...(stopSeries || []), ...(trailSeries || []), stopNow].forEach((v) => { if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } });
       const span = (hi - lo) || hi * 0.02 || 1;
       // 買値・前日終値は、値段の幅から大きく外れるときはグラフの端に印だけ出す
       const refs = [];
@@ -687,7 +695,8 @@
       const lineOf = (vals, curve) => d3.line().defined((v) => v != null).curve(curve || d3.curveLinear).x((v, i) => x(i)).y((v) => y(v))(vals);
       if (!isDay) svg.append('path').attr('d', lineOf(pts.map((p) => p.ma))).attr('fill', 'none').attr('stroke', 'var(--color-fg-muted)').attr('stroke-width', 1.5).attr('stroke-dasharray', '5 4');
       if (stopNow != null) svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(stopNow)).attr('y2', y(stopNow))
-        .attr('stroke', 'var(--color-bad)').attr('stroke-width', hold ? 1.2 : 1.6).attr('stroke-dasharray', hold ? '6 3' : '3 3').attr('opacity', hold ? 0.8 : 1);
+        .attr('stroke', 'var(--color-bad)').attr('stroke-width', 1.8);
+      if (trailSeries) svg.append('path').attr('d', lineOf(trailSeries)).attr('fill', 'none').attr('stroke', 'var(--color-bad)').attr('stroke-width', 1.5).attr('stroke-dasharray', '4 3').attr('opacity', 0.9);
       if (stopSeries) svg.append('path').attr('d', lineOf(stopSeries, d3.curveStepAfter)).attr('fill', 'none').attr('stroke', 'var(--color-bad)').attr('stroke-width', 2.2);
       // 値段(ローソク足か折れ線)
       if (candle) {
@@ -704,7 +713,9 @@
       const last = pts[n - 1], tags = [];
       tags.push({ y: y(last.c), t: `終値 ${kbFmt.usd(last.c)}`, color: 'var(--color-fg)' });
       if (!isDay && last.ma != null) tags.push({ y: y(last.ma), t: `50日線 ${kbFmt.usd(last.ma)}`, color: 'var(--color-fg-muted)' });
-      if (stopNow != null) tags.push({ y: y(stopNow), t: `${stopLabel} ${kbFmt.usd(stopNow)}`, color: 'var(--color-bad)' });
+      if (stopNow != null) tags.push({ y: y(stopNow), t: `売りライン ${kbFmt.usd(stopNow)}`, color: 'var(--color-bad)' });
+      else if (stopSeries && last.st != null) tags.push({ y: y(last.st), t: `売りライン ${kbFmt.usd(last.st)}`, color: 'var(--color-bad)' });
+      else if (trailSeries && trailSeries[n - 1] != null) tags.push({ y: y(trailSeries[n - 1]), t: `目安 ${kbFmt.usd(trailSeries[n - 1])}`, color: 'var(--color-bad)' });
       refs.forEach((f) => tags.push(f.in ? { y: y(f.v), t: `${f.label} ${kbFmt.usd(f.v)}`, color: f.color }
         : { y: f.v > hi ? m.t + 4 : priceB - 4, t: `${f.label} ${kbFmt.usd(f.v)} ${f.v > hi ? '↑' : '↓'}`, color: f.color }));
       svg.append('g').selectAll('text').data(C.spread(tags, 13)).join('text').attr('x', W - m.r + 4).attr('y', (t) => t.y + 4)
@@ -717,6 +728,7 @@
         if (p.v) out.push('出来高 ' + d3.format(',')(p.v));
         if (!isDay && p.ma != null) out.push('50日線 ' + kbFmt.usd(p.ma));
         if (stopSeries && p.st != null) out.push('売りライン ' + kbFmt.usd(p.st));
+        else if (trailSeries && trailSeries[i] != null) out.push('売りラインの目安 ' + kbFmt.usd(trailSeries[i]));
         return out;
       });
     });
