@@ -131,6 +131,7 @@
         <span data-leg="stop"><i style="border-top-color: var(--color-bad)"></i>売りライン(買った日からの実際の値)</span>
         <span data-leg="trail"><i style="border-top-color: var(--color-bad); border-top-style: dashed"></i>売りラインの目安(過去22日の最高値 − 3×ATR。持っていたらこう動く)</span>
         <span data-leg="cost"><i style="border-top-color: var(--color-warn); border-top-style: dotted"></i>買値</span>
+        <span data-leg="floor" hidden><i style="border-top-color: var(--color-ok); border-top-style: dashed"></i>買い条件の下限(次の取引日の終値)</span>
         <span data-leg="prev" hidden><i style="border-top-color: var(--cds-chart-reference); border-top-style: dashed"></i>前の日の終値</span>
         <span><i class="box" style="background: var(--cds-chart-axis)"></i>出来高(下の棒)</span>
       </div>
@@ -169,11 +170,14 @@
   <section class="card" id="watchlist" aria-labelledby="watch-h">
     <h2 id="watch-h">見張り候補</h2>
     <p class="muted">買いのタイミング条件 = 50日線より上・50日線が横ばい以上・直近2ヶ月で−10%より上。決算の中身(4つの絶対条件)は別に確認が必要です。</p>
+    <p class="muted">「買い条件の下限」= 次の取引日の終値がこの値段以上なら、3つの条件をすべて満たす、という一番安い値段です。毎日動きます。指値は取引中に約定しますが、ルールの判定は終値で行います。</p>
     <div class="scroll">
       <table data-source="report" data-row-key="symbol" aria-label="見張り候補の一覧">
         <thead><tr>
           <th data-field="symbol">銘柄</th>
           <th class="num" data-field="close">終値</th>
+          <th class="num" data-source="buyfloor" data-field="buy_floor">買い条件の下限</th>
+          <th class="num" data-source="buyfloor" data-field="floor_gap">下限まで</th>
           <th class="num" data-field="w1">1週間</th>
           <th class="num" data-field="m1">1ヶ月</th>
           <th class="num" data-field="ma50_gap">50日線との差</th>
@@ -193,6 +197,7 @@
       <dt>流れ</dt><dd>上向き = 50日線より上で、50日線が10営業日前より0.5%以上高い。下向き = 50日線より下で、50日線が0.5%以上低い。それ以外は横ばい。</dd>
       <dt>売りライン</dt><dd>買った後の最高終値から、普段の値動きの幅(ATR)の3倍を引いた値段。上がると引き上げ、下げることはありません。終値がこれを割ったらルール上は売り。確立企業(コア)は4倍。</dd>
       <dt>ATR</dt><dd>1日あたりの値動きの平均的な大きさ(直近22日)。値動きの荒い銘柄ほど大きくなります。</dd>
+      <dt>買い条件の下限</dt><dd>次の取引日の終値がこの値段以上なら、買いのタイミング条件を3つとも満たす、という一番安い値段。50日線が上向きの銘柄では毎日少しずつ上がります。取引中に一時この値段を下回っても、終値が上なら条件は満たします。</dd>
       <dt>最初の売りライン</dt><dd>見張り候補の詳細にある「買うなら売りライン」は、今の値段で買った場合に逆指値を置く目安(買値からの下落率)です。</dd>
     </dl>
   </details>
@@ -217,6 +222,32 @@
         market: spy ? spy.status : '取得できず',
       }];
     },
+  });
+  // 買い条件の下限: 次の取引日の終値を x としたとき、3つの条件をすべて満たす最も安い x
+  window.kbFloor = (r) => {
+    const arr = (v) => (Array.isArray(v) ? v : (typeof v === 'string' && v.startsWith('[') ? JSON.parse(v) : null));
+    const c = arr(r.h_c), h = arr(r.h_h), l = arr(r.h_l);
+    if (!c || c.length < 60) return null;
+    const n = c.length;
+    const s49 = d3.sum(c.slice(n - 49));
+    const maPrev10 = d3.sum(c.slice(n - 59, n - 9)) / 50;
+    const conds = [
+      ['50日線の上', s49 / 49],
+      ['50日線が横ばい以上', 50 * 0.99 * maPrev10 - s49],
+      ['2ヶ月で−10%より上', 0.9 * c[n - 42]],
+    ];
+    const [by, v] = conds.reduce((a, b) => (b[1] > a[1] ? b : a));
+    let atr = null;
+    if (h && l) atr = d3.mean(d3.range(n - 22, n).map((i) => Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1]))));
+    const k = r.atr_mult || 3;
+    return { buy_floor: +v.toFixed(2), floor_gap: +((v / c[n - 1] - 1) * 100).toFixed(1), floor_by: by,
+             floor_stop: atr != null ? +(v - k * atr).toFixed(2) : null, met: v <= c[n - 1] };
+  };
+  dash.calc('buyfloor', {
+    inputs: ['report'],
+    title: '買い条件の下限',
+    description: '次の取引日の終値が何ドル以上なら、買いのタイミング条件(50日線の上・50日線が横ばい以上・2ヶ月で−10%より上)を全部満たすか',
+    fn: (report) => report.filter((r) => r.kind === '見張り').map((r) => ({ symbol: r.symbol, ...(window.kbFloor(r) || {}) })),
   });
   dash.calc('totals', {
     inputs: ['report'],
@@ -345,6 +376,8 @@
   kbTable('watchTable', '見張り', [
     { render: (td, r) => { const s = document.createElement('span'); s.className = 'sym'; s.textContent = r.symbol; td.append(s); } },
     { num: true, render: (td, r) => { td.textContent = kbFmt.usd(r.close); } },
+    { num: true, render: (td, r) => { const f = window.kbFloor(r); td.textContent = f ? kbFmt.usd(f.buy_floor) : '—'; } },
+    { num: true, render: (td, r) => { const f = window.kbFloor(r); td.textContent = f ? kbFmt.pct(f.floor_gap) : '—'; td.classList.add(f && f.met ? 'ok' : 'warn'); } },
     pctCell('w1'), pctCell('m1'), pctCell('ma50_gap'),
     { render: (td, r) => td.append(pill(r.trend, kbFmt.trendClass(r.trend))) },
     { render: (td, r) => td.append(pill(r.status, r.status_level)) },
@@ -353,6 +386,7 @@
     ['前日比', kbFmt.pct(r.d1)], ['2ヶ月', kbFmt.pct(r.m2)], ['3ヶ月', kbFmt.pct(r.m3)],
     ['50日線の傾き', kbFmt.pct(r.ma50_slope)], ['高値からの下落', kbFmt.pct(r.from_high)],
     ['買うなら売りライン', (r.first_stop_pct ?? '—') + '%(' + r.atr_mult + '×ATR)'],
+    ...(() => { const f = window.kbFloor(r); return f ? [['下限を決めている条件', f.floor_by], ['下限で買ったときの売りライン', kbFmt.usd(f.floor_stop)]] : []; })(),
   ]);
 </script>
 
@@ -483,6 +517,7 @@
       document.querySelectorAll('[data-leg="stop"]').forEach((e) => { e.hidden = !hold; });
       document.querySelectorAll('[data-leg="cost"]').forEach((e) => { e.hidden = !hold; });
       document.querySelectorAll('[data-leg="trail"]').forEach((e) => { e.hidden = C.days === 1; });
+      document.querySelectorAll('[data-leg="floor"]').forEach((e) => { e.hidden = !(r && r.kind === '見張り'); });
       document.querySelectorAll('[data-leg="prev"]').forEach((e) => { e.hidden = C.days !== 1; });
     };
     C.open = (sym) => { C.sel = sym; C.mode = 'one'; C.sync(); C.redraw(); document.querySelectorAll('#charts').forEach((e) => e.scrollIntoView({ behavior: 'smooth', block: 'start' })); };
@@ -629,7 +664,12 @@
         add(r.close < r.stop ? `売りライン ${kbFmt.usd(r.stop)} を割っています` : `売りライン ${kbFmt.usd(r.stop)} まで ${kbFmt.pct(r.stop_gap)}`, r.close < r.stop ? 'bad' : '');
         add('損益 ' + kbFmt.pct(r.pnl_pct), kbFmt.signClass(r.pnl_pct));
       }
-      if (r.kind === '見張り') { add(r.status, r.status_level); if (r.first_stop_pct != null) add(`今買うなら最初の売りライン ${kbFmt.usd(r.close * (1 + r.first_stop_pct / 100))}(${r.first_stop_pct}%)`, 'bad'); }
+      if (r.kind === '見張り') {
+        add(r.status, r.status_level);
+        const f = window.kbFloor(r);
+        if (f) add(f.met ? `買い条件の下限 ${kbFmt.usd(f.buy_floor)}(${kbFmt.pct(f.floor_gap)})` : `条件クリアには終値 ${kbFmt.usd(f.buy_floor)} 以上が必要(${kbFmt.pct(f.floor_gap)})`, 'ok');
+        if (r.first_stop_pct != null) add(`今買うなら最初の売りライン ${kbFmt.usd(r.close * (1 + r.first_stop_pct / 100))}(${r.first_stop_pct}%)`, 'bad');
+      }
       void d1;
     });
 
@@ -664,6 +704,11 @@
       const refs = [];
       if (isDay) refs.push({ v: r.i_prev, label: '前日終値', color: 'var(--cds-chart-reference)', dash: '5 4' });
       if (hold && r.cost) refs.push({ v: r.cost, label: '買値', color: 'var(--color-warn)', dash: '2 3' });
+      const fl = r.kind === '見張り' ? window.kbFloor(r) : null;
+      if (fl) {
+        refs.push({ v: fl.buy_floor, label: '買い下限', color: 'var(--color-ok)', dash: '6 3' });
+        if (fl.met) { lo = Math.min(lo, fl.buy_floor); hi = Math.max(hi, fl.buy_floor); }
+      }
       const near = (v) => v != null && v >= lo - span * 0.6 && v <= hi + span * 0.6;
       refs.forEach((f) => { f.in = near(f.v); if (f.in) { lo = Math.min(lo, f.v); hi = Math.max(hi, f.v); } });
       const y = d3.scaleLinear().domain([lo, hi]).nice().range([priceB, m.t]);
