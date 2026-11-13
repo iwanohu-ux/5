@@ -1,0 +1,521 @@
+<meta name="dash-one-writer">
+<style>
+  .kb { display: grid; gap: var(--cds-gap-lg); font-family: var(--font-anthropic-sans); color: var(--color-fg); }
+  .kb h1 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; text-wrap: balance; }
+  .kb h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; }
+  .kb .muted { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+  .kb .card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: var(--cds-gap-md); min-width: 0; }
+  .kb .sum { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--cds-gap-sm); }
+  .kb .sum li { display: grid; grid-template-columns: 4.5em 1fr; gap: var(--cds-gap-sm); align-items: baseline; }
+  .kb .sum .lab { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); letter-spacing: .04em; }
+  .kb .kpis { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xl); }
+  .kb .kpi .v { font-family: var(--font-anthropic-serif); font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; }
+  .kb .scroll { overflow-x: auto; }
+  .kb table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: var(--cds-font-size-body); }
+  .kb th { text-align: left; font-weight: var(--cds-font-weight-medium); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+  .kb td { padding: var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+  .kb td.num, .kb th.num { text-align: right; }
+  .kb tr.main { cursor: pointer; }
+  .kb tr.main:hover td, .kb tr.main:focus-visible td { background: var(--color-bg); }
+  .kb tr.main:focus-visible { outline: 2px solid var(--cds-chart-reference); outline-offset: -2px; }
+  .kb tr.detail td { white-space: normal; background: var(--color-bg); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .kb .sym { font-weight: var(--cds-font-weight-medium); }
+  .kb .sym::before { content: "▸ "; color: var(--color-fg-muted); }
+  .kb tr.open .sym::before { content: "▾ "; }
+  .kb .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: var(--cds-font-size-caption); border: 1px solid currentColor; }
+  .kb .ok { color: var(--color-ok); }
+  .kb .warn { color: var(--color-warn); }
+  .kb .bad { color: var(--color-bad); }
+  .kb .flat { color: var(--color-fg-muted); }
+  .kb .caution { color: var(--color-warn); font-size: var(--cds-font-size-caption); white-space: normal; min-width: 12em; }
+  .kb .dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9em, 1fr)); gap: var(--cds-gap-xs) var(--cds-gap-md); padding-block: var(--cds-pad-xs); }
+  .kb .dgrid b { color: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+  .kb .chart { position: relative; min-height: 220px; }
+  .kb .chart .tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); box-shadow: var(--cds-shadow-popover); border-radius: var(--cds-radius); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; }
+  .kb .chart text { fill: var(--cds-text-secondary); font-size: var(--cds-font-size-caption); }
+  .kb details summary { cursor: pointer; font-weight: var(--cds-font-weight-medium); }
+  .kb details dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--cds-gap-xs) var(--cds-gap-md); margin: var(--cds-pad-sm) 0 0; }
+  .kb details dt { font-weight: var(--cds-font-weight-medium); }
+  .kb details dd { margin: 0; color: var(--color-fg-muted); }
+  .kb .ctl { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm) var(--cds-gap-lg); align-items: center; }
+  .kb .seg { display: flex; flex-wrap: wrap; gap: 4px; }
+  .kb .seg button { font: inherit; font-size: var(--cds-font-size-caption); padding: 4px 12px; border-radius: 999px; border: 1px solid var(--color-border-line); background: transparent; color: var(--color-fg); cursor: pointer; }
+  .kb .seg button[aria-pressed=true] { background: var(--color-fg); color: var(--color-bg); border-color: var(--color-fg); }
+  .kb .chips button[aria-pressed=false] { opacity: .45; }
+  .kb .chips .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+  .kb .chipgroup { display: grid; gap: 4px; }
+  .kb select { font: inherit; padding: 4px 8px; background: var(--color-panel); color: var(--color-fg); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); }
+  .kb .bigchart { position: relative; }
+  .kb .bigchart .tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); box-shadow: var(--cds-shadow-popover); border-radius: var(--cds-radius); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .kb .bigchart text { fill: var(--cds-text-secondary); font-size: var(--cds-font-size-caption); }
+  .kb .legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs) var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .kb .legend i { display: inline-block; width: 18px; height: 0; border-top: 2px solid; margin-right: 5px; vertical-align: 3px; }
+  .kb [data-dash-source-state=refreshing] { opacity: .5; }
+</style>
+
+<div class="kb">
+  <header id="top">
+    <h1>株ダッシュボード</h1>
+    <p class="muted">終値の日付 <span data-draw="asof" data-source="report" data-field="date" data-row="0">—</span>(米国時間)。毎朝のチェックと同じ計算です。</p>
+  </header>
+
+  <section class="card" id="summary" aria-labelledby="summary-h">
+    <h2 id="summary-h">3行まとめ</h2>
+    <ul class="sum">
+      <li><span class="lab">保有</span><span>流れが上向きなのは <b data-draw="healthy" data-source="summary" data-field="healthy" data-row="0">—</b>。売りラインを割っているのは <b data-draw="broken" data-source="summary" data-field="broken_count" data-row="0">—</b> 銘柄(全 <span data-draw="holdcount" data-source="summary" data-field="hold_count" data-row="0">—</span> 銘柄中)。</span></li>
+      <li><span class="lab">見張り</span><span>買いのタイミング条件をクリア: <b data-draw="watchok" data-source="summary" data-field="watch_ok" data-row="0">—</b>。そのうち急騰直後で注意: <b data-draw="watchhot" data-source="summary" data-field="watch_hot" data-row="0">—</b>。</span></li>
+      <li><span class="lab">相場</span><span>SPY は <b data-draw="market" data-source="summary" data-field="market" data-row="0">—</b>。</span></li>
+    </ul>
+  </section>
+
+  <section class="card" id="charts" aria-labelledby="charts-h">
+    <h2 id="charts-h">チャート</h2>
+    <div data-draw="charts" data-source="report">—</div>
+  </section>
+
+  <section class="card" id="holdings" aria-labelledby="holdings-h">
+    <h2 id="holdings-h">保有銘柄</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="muted">評価額</div><div class="v" data-draw="value" data-source="totals" data-field="value_usd" data-row="0">—</div></div>
+      <div class="kpi"><div class="muted">損益(取得額との差)</div><div class="v" data-draw="pnl" data-source="totals" data-field="pnl_usd" data-row="0">—</div></div>
+      <div class="kpi"><div class="muted">損益率</div><div class="v" data-draw="pnlpct" data-source="totals" data-field="pnl_pct" data-row="0">—</div></div>
+    </div>
+    <p class="muted">行を押すと詳細が開きます。売りライン = 買った後の最高終値 − 3×ATR(下げない)。</p>
+    <div class="scroll">
+      <table data-source="report" data-row-key="symbol" aria-label="保有銘柄の一覧">
+        <thead><tr>
+          <th data-field="symbol">銘柄</th>
+          <th class="num" data-field="close">終値</th>
+          <th class="num" data-field="pnl_pct">損益</th>
+          <th class="num" data-field="w1">1週間</th>
+          <th class="num" data-field="m1">1ヶ月</th>
+          <th data-field="trend">流れ</th>
+          <th class="num" data-field="stop">売りライン</th>
+          <th data-field="status">ルール上の状態</th>
+          <th data-field="cautions">注意</th>
+        </tr></thead>
+        <tbody data-draw="holdTable"></tbody>
+      </table>
+    </div>
+    <h2 id="pnl-chart-h">銘柄ごとの損益</h2>
+    <div class="chart" id="pnl-chart" data-draw="pnlChart" data-source="report">—</div>
+  </section>
+
+  <section class="card" id="watchlist" aria-labelledby="watch-h">
+    <h2 id="watch-h">見張り候補</h2>
+    <p class="muted">買いのタイミング条件 = 50日線より上・50日線が横ばい以上・直近2ヶ月で−10%より上。決算の中身(4つの絶対条件)は別に確認が必要です。</p>
+    <div class="scroll">
+      <table data-source="report" data-row-key="symbol" aria-label="見張り候補の一覧">
+        <thead><tr>
+          <th data-field="symbol">銘柄</th>
+          <th class="num" data-field="close">終値</th>
+          <th class="num" data-field="w1">1週間</th>
+          <th class="num" data-field="m1">1ヶ月</th>
+          <th class="num" data-field="ma50_gap">50日線との差</th>
+          <th data-field="trend">流れ</th>
+          <th data-field="status">買いのタイミング</th>
+          <th data-field="cautions">注意</th>
+        </tr></thead>
+        <tbody data-draw="watchTable"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <details class="card" id="glossary">
+    <summary>言葉と判定のしかた</summary>
+    <dl>
+      <dt>50日線</dt><dd>過去50営業日の終値の平均。株価がこれより上なら下げ止まり、下なら下げの途中と見ます。</dd>
+      <dt>流れ</dt><dd>上向き = 50日線より上で、50日線が10営業日前より0.5%以上高い。下向き = 50日線より下で、50日線が0.5%以上低い。それ以外は横ばい。</dd>
+      <dt>売りライン</dt><dd>買った後の最高終値から、普段の値動きの幅(ATR)の3倍を引いた値段。上がると引き上げ、下げることはありません。終値がこれを割ったらルール上は売り。確立企業(コア)は4倍。</dd>
+      <dt>ATR</dt><dd>1日あたりの値動きの平均的な大きさ(直近22日)。値動きの荒い銘柄ほど大きくなります。</dd>
+      <dt>最初の売りライン</dt><dd>見張り候補の詳細にある「買うなら売りライン」は、今の値段で買った場合に逆指値を置く目安(買値からの下落率)です。</dd>
+    </dl>
+  </details>
+</div>
+
+<script>
+  dash.calc('summary', {
+    inputs: ['report'],
+    title: '3行まとめの数え方',
+    description: '保有・見張り・相場の行から、状態ごとに銘柄を数えたもの',
+    fn: (report) => {
+      const hold = report.filter((r) => r.kind === '保有');
+      const watch = report.filter((r) => r.kind === '見張り');
+      const spy = report.find((r) => r.kind === '相場');
+      const ok = watch.filter((r) => r.status_level === 'ok');
+      return [{
+        healthy: hold.filter((r) => r.trend === '上向き').map((r) => r.symbol).join('・') || 'なし',
+        broken_count: hold.filter((r) => r.status_level === 'bad').length,
+        hold_count: hold.length,
+        watch_ok: ok.map((r) => r.symbol).join('・') || 'なし',
+        watch_hot: ok.filter((r) => (r.w1 ?? 0) >= 20).map((r) => r.symbol).join('・') || 'なし',
+        market: spy ? spy.status : '取得できず',
+      }];
+    },
+  });
+  dash.calc('totals', {
+    inputs: ['report'],
+    title: '保有の合計',
+    description: '保有銘柄の評価額(終値×株数)と、取得額(取得単価×株数)との差',
+    fn: (report) => {
+      const hold = report.filter((r) => r.kind === '保有');
+      const value = d3.sum(hold, (r) => r.close * r.shares);
+      const cost = d3.sum(hold, (r) => r.cost * r.shares);
+      return [{ value_usd: Math.round(value), pnl_usd: Math.round(value - cost), pnl_pct: cost ? +(((value / cost) - 1) * 100).toFixed(1) : null }];
+    },
+  });
+</script>
+
+<script>
+  window.kbFmt = {
+    pct: (v) => (v == null || isNaN(v) ? '—' : (v > 0 ? '+' : '') + Number(v).toFixed(1) + '%'),
+    usd: (v) => (v == null || isNaN(v) ? '—' : '$' + d3.format(',.2f')(v)),
+    usd0: (v) => (v == null || isNaN(v) ? '—' : (v < 0 ? '−$' : '$') + d3.format(',')(Math.abs(v))),
+    signedUsd0: (v) => (v == null || isNaN(v) ? '—' : (v > 0 ? '+$' : v < 0 ? '−$' : '$') + d3.format(',')(Math.abs(v))),
+    trendClass: (t) => (t === '上向き' ? 'ok' : t === '下向き' ? 'bad' : 'flat'),
+    signClass: (v) => (v == null ? '' : v > 0 ? 'ok' : v < 0 ? 'bad' : ''),
+  };
+
+  // 1行の要約を描く(文字だけ)
+  function kbText(name, src, field, fmt) {
+    dash.draw(name, (el) => {
+      const d = dash.data(src);
+      if (d.status !== 'ok' || !d.data || !d.data.length) { el.textContent = '—'; return; }
+      const v = d.data[0][field];
+      el.textContent = fmt ? fmt(v) : (v ?? '—');
+    });
+  }
+  kbText('asof', 'report', 'date');
+  kbText('healthy', 'summary', 'healthy');
+  kbText('broken', 'summary', 'broken_count');
+  kbText('holdcount', 'summary', 'hold_count');
+  kbText('watchok', 'summary', 'watch_ok');
+  kbText('watchhot', 'summary', 'watch_hot');
+  kbText('market', 'summary', 'market');
+  kbText('value', 'totals', 'value_usd', kbFmt.usd0);
+  dash.draw('pnl', (el) => {
+    const d = dash.data('totals');
+    const v = d.status === 'ok' && d.data && d.data.length ? d.data[0].pnl_usd : null;
+    el.textContent = kbFmt.signedUsd0(v);
+    el.className = 'v ' + kbFmt.signClass(v);
+  });
+  dash.draw('pnlpct', (el) => {
+    const d = dash.data('totals');
+    const v = d.status === 'ok' && d.data && d.data.length ? d.data[0].pnl_pct : null;
+    el.textContent = kbFmt.pct(v);
+    el.className = 'v ' + kbFmt.signClass(v);
+  });
+</script>
+
+<script>
+  // 表: 行を押すと詳細の行が開く
+  function kbTable(name, kind, cols, details) {
+    const open = new Set();
+    dash.draw(name, (tbody) => {
+      const d = dash.data('report');
+      tbody.replaceChildren();
+      if (d.status !== 'ok') {
+        const tr = tbody.insertRow(); const td = tr.insertCell(); td.colSpan = cols.length;
+        td.textContent = d.status === 'error' ? '読み込めませんでした' : '—';
+        return;
+      }
+      const rows = d.data.filter((r) => r.kind === kind);
+      rows.forEach((r) => {
+        const tr = tbody.insertRow();
+        tr.className = 'main' + (open.has(r.symbol) ? ' open' : '');
+        tr.dataset.key = r.symbol;
+        tr.tabIndex = 0;
+        tr.setAttribute('aria-expanded', open.has(r.symbol) ? 'true' : 'false');
+        cols.forEach((c) => {
+          const td = tr.insertCell();
+          if (c.num) td.className = 'num';
+          c.render(td, r);
+        });
+        const det = tbody.insertRow();
+        det.className = 'detail';
+        det.hidden = !open.has(r.symbol);
+        const dtd = det.insertCell(); dtd.colSpan = cols.length;
+        const grid = document.createElement('div'); grid.className = 'dgrid';
+        details(r).forEach(([k, v]) => {
+          const item = document.createElement('div');
+          const label = document.createElement('span'); label.textContent = k + ' ';
+          const val = document.createElement('b'); val.textContent = v;
+          item.append(label, val); grid.append(item);
+        });
+        dtd.append(grid);
+        if (r.note) { const p = document.createElement('div'); p.textContent = 'メモ: ' + r.note; dtd.append(p); }
+        const toggle = () => {
+          if (open.has(r.symbol)) open.delete(r.symbol); else open.add(r.symbol);
+          det.hidden = !open.has(r.symbol);
+          tr.classList.toggle('open', open.has(r.symbol));
+          tr.setAttribute('aria-expanded', open.has(r.symbol) ? 'true' : 'false');
+        };
+        tr.addEventListener('click', toggle);
+        tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+      });
+    });
+  }
+  const pctCell = (f) => ({ num: true, render: (td, r) => { td.textContent = kbFmt.pct(r[f]); td.classList.add(kbFmt.signClass(r[f]) || 'x'); } });
+  const pill = (text, cls) => { const s = document.createElement('span'); s.className = 'pill ' + cls; s.textContent = text; return s; };
+
+  kbTable('holdTable', '保有', [
+    { render: (td, r) => { const s = document.createElement('span'); s.className = 'sym'; s.textContent = r.symbol; td.append(s); } },
+    { num: true, render: (td, r) => { td.textContent = kbFmt.usd(r.close); } },
+    pctCell('pnl_pct'), pctCell('w1'), pctCell('m1'),
+    { render: (td, r) => td.append(pill(r.trend, kbFmt.trendClass(r.trend))) },
+    { num: true, render: (td, r) => { td.textContent = kbFmt.usd(r.stop); } },
+    { render: (td, r) => td.append(pill(r.status, r.status_level)) },
+    { render: (td, r) => { td.className = 'caution'; td.textContent = r.cautions || ''; } },
+  ], (r) => [
+    ['取得単価', kbFmt.usd(r.cost)], ['株数', r.shares], ['損益', kbFmt.signedUsd0(r.pnl_usd)],
+    ['評価額', kbFmt.usd0(r.value_usd)], ['前日比', kbFmt.pct(r.d1)], ['3ヶ月', kbFmt.pct(r.m3)],
+    ['50日線との差', kbFmt.pct(r.ma50_gap)], ['50日線の傾き', kbFmt.pct(r.ma50_slope)],
+    ['買った後の最高値', kbFmt.usd(r.peak)], ['売りラインまで', kbFmt.pct(r.stop_gap)],
+    ['売りラインの幅', r.atr_mult + '×ATR'],
+  ]);
+
+  kbTable('watchTable', '見張り', [
+    { render: (td, r) => { const s = document.createElement('span'); s.className = 'sym'; s.textContent = r.symbol; td.append(s); } },
+    { num: true, render: (td, r) => { td.textContent = kbFmt.usd(r.close); } },
+    pctCell('w1'), pctCell('m1'), pctCell('ma50_gap'),
+    { render: (td, r) => td.append(pill(r.trend, kbFmt.trendClass(r.trend))) },
+    { render: (td, r) => td.append(pill(r.status, r.status_level)) },
+    { render: (td, r) => { td.className = 'caution'; td.textContent = r.cautions || ''; } },
+  ], (r) => [
+    ['前日比', kbFmt.pct(r.d1)], ['2ヶ月', kbFmt.pct(r.m2)], ['3ヶ月', kbFmt.pct(r.m3)],
+    ['50日線の傾き', kbFmt.pct(r.ma50_slope)], ['高値からの下落', kbFmt.pct(r.from_high)],
+    ['買うなら売りライン', (r.first_stop_pct ?? '—') + '%(' + r.atr_mult + '×ATR)'],
+  ]);
+</script>
+
+<script>
+  // 保有銘柄の損益(%)の横棒グラフ
+  dash.draw('pnlChart', (el) => {
+    const d = dash.data('report');
+    el.replaceChildren();
+    if (d.status !== 'ok') { el.textContent = d.status === 'error' ? '読み込めませんでした' : '—'; return; }
+    const rows = d.data.filter((r) => r.kind === '保有').sort((a, b) => b.pnl_pct - a.pnl_pct);
+    if (!rows.length) { el.textContent = '保有銘柄がありません'; return; }
+    const W = el.clientWidth || 320, barH = 26, H = rows.length * barH + 24;
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`)
+      .attr('role', 'img').attr('aria-label', '保有銘柄ごとの損益率の横棒グラフ');
+    const labels = svg.append('g');
+    labels.selectAll('text').data(rows).join('text').text((r) => r.symbol)
+      .attr('y', (r, i) => i * barH + barH / 2 + 4);
+    let left = 0; labels.selectAll('text').each(function () { left = Math.max(left, this.getComputedTextLength()); });
+    left += 10;
+    const ext = d3.extent([0, ...rows.map((r) => r.pnl_pct)]);
+    const x = d3.scaleLinear().domain(ext).nice().range([left, W - 52]);
+    svg.append('g').attr('transform', `translate(0,${H - 20})`)
+      .call(d3.axisBottom(x).ticks(Math.max(2, Math.floor(W / 110))).tickFormat((v) => v + '%'))
+      .call((g) => { g.select('.domain').attr('stroke', 'var(--cds-chart-axis)'); g.selectAll('line').attr('stroke', 'var(--cds-chart-axis)'); });
+    svg.append('line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', 0).attr('y2', H - 20).attr('stroke', 'var(--cds-chart-reference)');
+    const tip = d3.select(el).append('div').attr('class', 'tip').style('opacity', 0);
+    svg.append('g').selectAll('rect').data(rows).join('rect')
+      .attr('x', (r) => Math.min(x(0), x(r.pnl_pct))).attr('width', (r) => Math.abs(x(r.pnl_pct) - x(0)))
+      .attr('y', (r, i) => i * barH + 5).attr('height', barH - 10).attr('rx', 3)
+      .style('fill', (r) => (r.pnl_pct >= 0 ? 'var(--color-ok)' : 'var(--color-bad)'))
+      .on('pointerenter pointermove', (e, r) => {
+        const [mx, my] = d3.pointer(e, el);
+        tip.style('opacity', 1).text(`${r.symbol}: ${kbFmt.pct(r.pnl_pct)}(${kbFmt.signedUsd0(r.pnl_usd)})`)
+          .style('left', Math.min(mx + 10, W - 170) + 'px').style('top', (my - 30) + 'px');
+      })
+      .on('pointerleave', () => tip.style('opacity', 0));
+    svg.append('g').selectAll('text').data(rows).join('text')
+      .text((r) => kbFmt.pct(r.pnl_pct))
+      .attr('x', (r) => (r.pnl_pct >= 0 ? x(r.pnl_pct) + 4 : x(0) + 4))
+      .attr('y', (r, i) => i * barH + barH / 2 + 4);
+  });
+</script>
+
+<script>
+  // チャート: 期間の切り替え・重ねて比べる・1銘柄を見る
+  (function () {
+    const PER = [['1週間', 5], ['1ヶ月', 21], ['3ヶ月', 63], ['6ヶ月', 126], ['1年', 252]];
+    const PAL = d3.schemeTableau10;
+    const parse = d3.timeParse('%Y-%m-%d');
+    const st = { days: 63, mode: 'cmp', pick: null, sel: null, hi: null };
+    let rows = [], root = null;
+
+    const colorOf = (r) => (r.kind === '相場' ? 'var(--color-fg-muted)' : PAL[rows.indexOf(r) % PAL.length]);
+    const btn = (label, pressed, onClick, extra) => {
+      const b = document.createElement('button'); b.type = 'button';
+      b.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+      if (extra) b.append(extra);
+      b.append(label); b.addEventListener('click', onClick); return b;
+    };
+    const seg = (items) => { const d = document.createElement('div'); d.className = 'seg'; items.forEach((x) => d.append(x)); return d; };
+    const axisStyle = (g) => { g.select('.domain').attr('stroke', 'var(--cds-chart-axis)'); g.selectAll('line').attr('stroke', 'var(--cds-chart-axis)'); };
+    const tfmt = () => (st.days >= 126 ? d3.timeFormat('%-m月') : d3.timeFormat('%-m/%-d'));
+
+    function render() {
+      if (!root) return;
+      root.replaceChildren();
+      const ctl = document.createElement('div'); ctl.className = 'ctl';
+      ctl.append(seg(PER.map(([l, n]) => btn(l, st.days === n, () => { st.days = n; render(); }))));
+      ctl.append(seg([
+        btn('重ねて比べる', st.mode === 'cmp', () => { st.mode = 'cmp'; render(); }),
+        btn('1銘柄を見る', st.mode === 'one', () => { st.mode = 'one'; render(); }),
+      ]));
+      root.append(ctl);
+      if (st.mode === 'cmp') renderCmp(); else renderOne();
+    }
+
+    function renderCmp() {
+      const box = document.createElement('div'); box.className = 'chipgroup';
+      const presets = seg([
+        btn('保有+SPY', false, () => { st.pick = new Set(rows.filter((r) => r.kind !== '見張り').map((r) => r.symbol)); render(); }),
+        btn('見張り+SPY', false, () => { st.pick = new Set(rows.filter((r) => r.kind !== '保有').map((r) => r.symbol)); render(); }),
+        btn('全部', false, () => { st.pick = new Set(rows.map((r) => r.symbol)); render(); }),
+        btn('全部外す', false, () => { st.pick = new Set(); render(); }),
+      ]);
+      box.append(presets);
+      ['保有', '見張り', '相場'].forEach((k) => {
+        const g = rows.filter((r) => r.kind === k); if (!g.length) return;
+        const chips = seg(g.map((r) => {
+          const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = colorOf(r);
+          return btn(r.symbol, st.pick.has(r.symbol), () => { st.pick.has(r.symbol) ? st.pick.delete(r.symbol) : st.pick.add(r.symbol); render(); }, dot);
+        }));
+        chips.classList.add('chips');
+        const lab = document.createElement('span'); lab.className = 'muted'; lab.textContent = k === '相場' ? '相場' : k;
+        const row = document.createElement('div'); row.className = 'ctl'; row.append(lab, chips); box.append(row);
+      });
+      root.append(box);
+      const note = document.createElement('p'); note.className = 'muted';
+      note.textContent = '期間の最初の日を0%として、そこからの値上がり率を重ねています。値段の違う銘柄も同じ物差しで比べられます。線を押すとその銘柄が目立ちます。';
+      root.append(note);
+
+      const N = st.days + 1;
+      const series = rows.filter((r) => st.pick.has(r.symbol)).map((r) => {
+        const d = r.h_d.slice(-N), c = r.h_c.slice(-N);
+        const base = c.find((v) => v != null);
+        return { r, color: colorOf(r), pts: d.map((x, j) => ({ t: parse(x), v: c[j] == null || !base ? null : (c[j] / base - 1) * 100 })) };
+      });
+      const el = document.createElement('div'); el.className = 'bigchart'; root.append(el);
+      if (!series.length) { el.textContent = '銘柄を選んでください'; return; }
+      const W = root.clientWidth || 340, H = 300, m = { t: 10, r: 78, b: 24, l: 42 };
+      const all = series.flatMap((s) => s.pts.filter((p) => p.v != null));
+      const x = d3.scaleTime().domain(d3.extent(all, (p) => p.t)).range([m.l, W - m.r]);
+      const y = d3.scaleLinear().domain(d3.extent([0, ...all.map((p) => p.v)])).nice().range([H - m.b, m.t]);
+      const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`)
+        .attr('role', 'img').attr('aria-label', '選んだ銘柄の値上がり率を重ねた折れ線グラフ');
+      svg.append('g').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.floor(W / 90))).tickFormat(tfmt())).call(axisStyle);
+      svg.append('g').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickFormat((v) => (v > 0 ? '+' : '') + v + '%')).call(axisStyle);
+      svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', 'var(--cds-chart-reference)');
+      const line = d3.line().defined((p) => p.v != null).x((p) => x(p.t)).y((p) => y(p.v));
+      const op = (s) => (st.hi && st.hi !== s.r.symbol ? 0.18 : 1);
+      svg.append('g').selectAll('path').data(series).join('path')
+        .attr('d', (s) => line(s.pts)).attr('fill', 'none').attr('stroke', (s) => s.color)
+        .attr('stroke-width', (s) => (st.hi === s.r.symbol ? 3 : 1.8)).attr('stroke-dasharray', (s) => (s.r.kind === '相場' ? '5 4' : null))
+        .attr('opacity', op).style('cursor', 'pointer')
+        .on('click', (e, s) => { st.hi = st.hi === s.r.symbol ? null : s.r.symbol; render(); });
+      // 右端のラベル(重なりをずらす)
+      const ends = series.map((s) => { const last = [...s.pts].reverse().find((p) => p.v != null); return { s, v: last ? last.v : 0, y: last ? y(last.v) : 0 }; })
+        .sort((a, b) => a.y - b.y);
+      for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
+      svg.append('g').selectAll('text').data(ends).join('text')
+        .attr('x', W - m.r + 4).attr('y', (e) => e.y + 4).attr('opacity', (e) => op(e.s)).style('cursor', 'pointer')
+        .style('fill', (e) => e.s.color).text((e) => `${e.s.r.symbol} ${(e.v > 0 ? '+' : '') + e.v.toFixed(0)}%`)
+        .on('click', (ev, e) => { st.hi = st.hi === e.s.r.symbol ? null : e.s.r.symbol; render(); });
+      hover(el, svg, W, H, m, x, series[0].pts.map((p) => p.t), (i, t) => {
+        const key = d3.timeFormat('%Y-%m-%d')(t);
+        const vals = series.map((s) => { const p = s.pts.find((q) => q.t && +q.t === +t); return [s.r.symbol, p ? p.v : null]; })
+          .filter((v) => v[1] != null).sort((a, b) => b[1] - a[1]);
+        return [key, ...vals.map(([k, v]) => `${k} ${(v > 0 ? '+' : '') + v.toFixed(1)}%`)];
+      });
+    }
+
+    function renderOne() {
+      const sel = document.createElement('select'); sel.setAttribute('aria-label', '銘柄を選ぶ');
+      ['保有', '見張り', '相場'].forEach((k) => {
+        const g = rows.filter((r) => r.kind === k); if (!g.length) return;
+        const og = document.createElement('optgroup'); og.label = k;
+        g.forEach((r) => { const o = document.createElement('option'); o.value = r.symbol; o.textContent = r.symbol; o.selected = r.symbol === st.sel; og.append(o); });
+        sel.append(og);
+      });
+      sel.addEventListener('change', () => { st.sel = sel.value; render(); });
+      const r = rows.find((q) => q.symbol === st.sel) || rows[0];
+      const N = st.days + 1;
+      const d = r.h_d.slice(-N).map(parse), c = r.h_c.slice(-N), ma = r.h_m.slice(-N), sp = r.h_s ? r.h_s.slice(-N) : null;
+      const first = c.find((v) => v != null), last = c[c.length - 1];
+      const info = document.createElement('div'); info.className = 'ctl';
+      const chg = first ? (last / first - 1) * 100 : null;
+      const sum = document.createElement('span');
+      sum.append(`${r.symbol} 終値 ${kbFmt.usd(last)} / この期間 `);
+      const b = document.createElement('b'); b.className = kbFmt.signClass(chg); b.textContent = kbFmt.pct(chg); sum.append(b);
+      if (r.kind === '保有' && r.stop != null) sum.append(last < r.stop ? ` / 売りライン ${kbFmt.usd(r.stop)} を割っています` : ` / 売りライン ${kbFmt.usd(r.stop)} まで ${kbFmt.pct(r.stop_gap)}`);
+      info.append(sel, sum); root.append(info);
+
+      const el = document.createElement('div'); el.className = 'bigchart'; root.append(el);
+      const W = root.clientWidth || 340, H = 300, m = { t: 10, r: 116, b: 24, l: 52 };
+      const vals = [...c, ...ma, ...(sp || [])].filter((v) => v != null);
+      if (r.kind === '保有' && r.cost) vals.push(r.cost);
+      const x = d3.scaleTime().domain(d3.extent(d)).range([m.l, W - m.r]);
+      const y = d3.scaleLinear().domain(d3.extent(vals)).nice().range([H - m.b, m.t]);
+      const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`)
+        .attr('role', 'img').attr('aria-label', `${r.symbol}の終値・50日線・売りラインの折れ線グラフ`);
+      svg.append('g').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.floor(W / 90))).tickFormat(tfmt())).call(axisStyle);
+      svg.append('g').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickFormat((v) => '$' + d3.format(',')(v))).call(axisStyle);
+      const mk = (arr) => d3.line().defined((v) => v != null).x((v, i) => x(d[i])).y((v) => y(v))(arr);
+      const lines = [];
+      lines.push({ arr: ma, color: 'var(--color-fg-muted)', dash: '5 4', w: 1.5, label: '50日線' });
+      if (sp) lines.push({ arr: sp, color: 'var(--color-bad)', dash: null, w: 1.8, label: '売りライン', step: true });
+      lines.push({ arr: c, color: 'var(--color-fg)', dash: null, w: 2, label: '終値' });
+      lines.forEach((L) => {
+        const path = L.step ? d3.line().defined((v) => v != null).curve(d3.curveStepAfter).x((v, i) => x(d[i])).y((v) => y(v))(L.arr) : mk(L.arr);
+        svg.append('path').attr('d', path).attr('fill', 'none').attr('stroke', L.color).attr('stroke-width', L.w).attr('stroke-dasharray', L.dash);
+      });
+      const tags = [];
+      lines.forEach((L) => { const v = [...L.arr].reverse().find((q) => q != null); if (v != null) tags.push({ y: y(v), t: `${L.label} ${kbFmt.usd(v)}`, color: L.color }); });
+      if (r.kind === '保有' && r.cost) {
+        svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(r.cost)).attr('y2', y(r.cost))
+          .attr('stroke', 'var(--color-warn)').attr('stroke-dasharray', '2 3');
+        tags.push({ y: y(r.cost), t: `買値 ${kbFmt.usd(r.cost)}`, color: 'var(--color-warn)' });
+      }
+      tags.sort((a, b) => a.y - b.y);
+      for (let i = 1; i < tags.length; i++) if (tags[i].y - tags[i - 1].y < 13) tags[i].y = tags[i - 1].y + 13;
+      svg.append('g').selectAll('text').data(tags).join('text').attr('x', W - m.r + 4).attr('y', (g) => g.y + 4)
+        .style('fill', (g) => g.color).text((g) => g.t);
+      const lg = document.createElement('div'); lg.className = 'legend';
+      lines.slice().reverse().forEach((L) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.borderTopColor = L.color; if (L.dash) i.style.borderTopStyle = 'dashed'; s.append(i, L.label); lg.append(s); });
+      if (r.kind === '保有') { const s = document.createElement('span'); const i = document.createElement('i'); i.style.borderTopColor = 'var(--color-warn)'; i.style.borderTopStyle = 'dotted'; s.append(i, '買値'); lg.append(s); }
+      root.append(lg);
+      hover(el, svg, W, H, m, x, d, (i) => {
+        const out = [d3.timeFormat('%Y-%m-%d')(d[i]), `終値 ${kbFmt.usd(c[i])}`];
+        if (ma[i] != null) out.push(`50日線 ${kbFmt.usd(ma[i])}`);
+        if (sp && sp[i] != null) out.push(`売りライン ${kbFmt.usd(sp[i])}`);
+        return out;
+      });
+    }
+
+    // 指やマウスを当てた日の値を表示する
+    function hover(el, svg, W, H, m, x, dates, lines) {
+      const tip = d3.select(el).append('div').attr('class', 'tip').style('opacity', 0);
+      const rule = svg.append('line').attr('y1', m.t).attr('y2', H - m.b).attr('stroke', 'var(--cds-chart-reference)').attr('opacity', 0);
+      const bis = d3.bisector((t) => t).center;
+      svg.append('rect').attr('x', m.l).attr('y', m.t).attr('width', W - m.l - m.r).attr('height', H - m.t - m.b)
+        .attr('fill', 'transparent').style('pointer-events', 'all')
+        .on('pointerenter pointermove', (e) => {
+          const [px] = d3.pointer(e); const i = bis(dates, x.invert(px)); const t = dates[i]; if (!t) return;
+          rule.attr('x1', x(t)).attr('x2', x(t)).attr('opacity', 1);
+          tip.style('opacity', 1).selectAll('div').data(lines(i, t)).join('div').text((s) => s);
+          const [mx] = d3.pointer(e, el);
+          tip.style('left', (mx > W / 2 ? mx - 170 : mx + 12) + 'px').style('top', m.t + 'px');
+        })
+        .on('pointerleave', () => { tip.style('opacity', 0); rule.attr('opacity', 0); });
+      svg.selectAll('path').raise();
+      svg.select('rect').lower();
+    }
+
+    dash.draw('charts', (el) => {
+      root = el;
+      const d = dash.data('report');
+      if (d.status !== 'ok') { el.textContent = d.status === 'error' ? '読み込めませんでした' : '—'; return; }
+      rows = d.data.filter((r) => Array.isArray(r.h_d) && r.h_d.length);
+      if (!rows.length) { el.textContent = 'チャート用のデータがまだありません(次の更新で入ります)'; return; }
+      if (!st.pick) st.pick = new Set(rows.filter((r) => r.kind !== '見張り').map((r) => r.symbol));
+      if (!st.sel || !rows.some((r) => r.symbol === st.sel)) st.sel = (rows.find((r) => r.kind === '保有') || rows[0]).symbol;
+      render();
+    });
+  })();
+</script>

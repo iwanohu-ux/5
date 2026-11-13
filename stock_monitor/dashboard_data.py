@@ -38,9 +38,26 @@ def base_stats(rows):
         "d1": pct(c[-1], c[-2]), "w1": pct(c[-1], c[-6]), "m1": pct(c[-1], c[-22]),
         "m2": pct(c[-1], c[-43]), "m3": pct(c[-1], c[-64]),
         "ma50": round(ma50, 2), "ma50_gap": pct(c[-1], ma50), "ma50_slope": pct(ma50, ma50_prev),
-        "from_high": pct(c[-1], max(c)),
+        "from_high": pct(c[-1], max(c[-252:])),  # 直近1年の高値から
         "trend": trend_of(c[-1], ma50, slope_raw),
     }
+
+
+HIST_DAYS = 252  # チャート用に持つ営業日数(約1年)
+
+
+def hist_of(rows, stop_hist=None):
+    """チャート用: 日付・終値・50日線(・売りライン)を直近 HIST_DAYS 日分。"""
+    c = [r["close"] for r in rows]
+    n = len(rows)
+    i0 = max(0, n - HIST_DAYS)
+    out = {"h_d": [r["date"] for r in rows[i0:]],
+           "h_c": [round(x, 2) for x in c[i0:]],
+           "h_m": [round(sum(c[i - 49:i + 1]) / 50, 2) if i >= 49 else None for i in range(i0, n)]}
+    if stop_hist:
+        st = {d: v for d, v in stop_hist}
+        out["h_s"] = [round(st[d], 2) if d in st else None for d in out["h_d"]]
+    return out
 
 
 def cautions(s, ed, today):
@@ -71,7 +88,7 @@ def main():
 
     for h in cfg["holdings"]:
         sym = h["symbol"]
-        start = min(dt.date.fromisoformat(h["entry"]) - dt.timedelta(days=60), today - dt.timedelta(days=160))
+        start = min(dt.date.fromisoformat(h["entry"]) - dt.timedelta(days=60), today - dt.timedelta(days=460))
         try:
             rows = M.fetch(sym, start.isoformat(), end)
             s = base_stats(rows)
@@ -93,12 +110,13 @@ def main():
             "status_level": "bad" if broken else "ok",
             "cautions": " / ".join(cautions(s, earnings.get(sym), today)),
             "note": "",
+            **hist_of(rows, [(x[0], x[3]) for x in hist]),
         })
 
     for w in cfg.get("watchlist", []):
         sym = w["symbol"]
         try:
-            rows = M.fetch(sym, (today - dt.timedelta(days=160)).isoformat(), end)
+            rows = M.fetch(sym, (today - dt.timedelta(days=460)).isoformat(), end)
             s = base_stats(rows)
         except Exception as e:  # noqa: BLE001
             errors.append(f"{sym}: {e}")
@@ -116,10 +134,11 @@ def main():
             "first_stop_pct": round(-mult * atr / s["close"] * 100, 0), "atr_mult": mult,
             "cautions": " / ".join(cautions(s, earnings.get(sym), today)),
             "note": w.get("note", ""),
+            **hist_of(rows),
         })
 
     try:
-        spy = M.fetch(cfg["market_symbol"], (today - dt.timedelta(days=330)).isoformat(), end)
+        spy = M.fetch(cfg["market_symbol"], (today - dt.timedelta(days=460)).isoformat(), end)
         s = base_stats(spy)
         c = [r["close"] for r in spy]
         ma200 = sum(c[-200:]) / 200
@@ -127,7 +146,8 @@ def main():
                          "ma200_gap": pct(c[-1], ma200),
                          "status": ("200日線の上" if c[-1] > ma200 else "200日線の下") + "・"
                          + ("50日線の上" if s["ma50_gap"] > 0 else "50日線の下(調整中)"),
-                         "status_level": "ok" if c[-1] > ma200 else "bad", "cautions": "", "note": ""})
+                         "status_level": "ok" if c[-1] > ma200 else "bad", "cautions": "", "note": "",
+                         **hist_of(spy)})
     except Exception as e:  # noqa: BLE001
         errors.append(f"SPY: {e}")
 
@@ -136,7 +156,7 @@ def main():
     for r in rows_out:
         r.pop("_slope_raw", None)
         r["asof"] = asof
-    json.dump(rows_out, open(a.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    json.dump(rows_out, open(a.out, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print(f"{len(rows_out)}銘柄 / エラー{len(errors)}件 → {a.out}")
 
 
